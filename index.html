@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Yska69 vs Timaficence: Mobile Boss Run</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            color: #00ff9d;
+            font-family: 'Roboto Mono', monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            touch-action: manipulation;
+        }
+
+        #gameContainer {
+            position: relative;
+            border: 4px solid #333;
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
+            /* Убран background-gradient здесь, так как он теперь в canvas */
+            overflow: hidden;
+            width: 800px;
+            height: 400px;
+        }
+
+        canvas {
+            display: block;
+            /* На canvas теперь рисуется фон и наложение */
+        }
+
+        /* Интерфейс поверх игры */
+        .ui-layer {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            font-size: 18px;
+            text-shadow: 0 0 5px #00ff9d;
+            z-index: 5;
+        }
+
+        .ui-item {
+            display: flex;
+            align-items: center;
+            padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+        }
+
+        #health, #bossHealth { color: #ff4444; font-weight: bold; }
+        #stamina { color: #44aaff; font-size: 20px; }
+
+        #gameOverScreen, #victoryScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px;
+            border-radius: 10px;
+            border: 2px solid #00ff9d;
+            display: none;
+            z-index: 100;
+        }
+        #victoryScreen { border-color: gold; }
+
+        #victoryImage {
+            width: 150px;
+            height: 150px;
+            margin-top: 15px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid gold;
+        }
+
+        button {
+            background: #00ff9d;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            border-radius: 5px;
+            margin-top: 15px;
+            text-transform: uppercase;
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div class="ui-layer">
+            <div id="score" class="ui-item">SCORE: 0</div>
+            <div id="health" class="ui-item">HP: ❤️❤️❤️</div>
+            <div id="stamina" class="ui-item">🔋</div>
+            <div id="bossHealth" class="ui-item" style="display:none;">TIMAFICENCE: 🛡️🛡️🛡️</div>
+        </div>
+
+        <div id="gameOverScreen">
+            <h1 style="margin: 0; color: #ff4444;">SYSTEM CRASHED</h1>
+            <p>Вы проиграли битву за рынок.</p>
+            <p id="finalScore">Score: 0</p>
+            <button onclick="resetGame()">Перезагрузить</button>
+        </div>
+
+        <div id="victoryScreen">
+            <h1 style="margin: 0; color: gold;">ПОБЕДА!</h1>
+            <p>Timaficence повержен! Все закончилось дружно и мирно.</p>
+            <img id="victoryImage" src="victory.jpg" onerror="this.style.display='none';" alt="Victory Image">
+            <button onclick="resetGame()">Начать заново</button>
+        </div>
+    </div>
+
+    <div class="subtitle">Управление: ПРОБЕЛ/ТАП для прыжка. C/КЛИК для выстрела (после 100 очков).</div>
+
+    <img id="heroImage" src="yska69.jpg" style="display:none;" alt="hero">
+    <img id="backgroundImage" src="background.jpg" style="display:none;" alt="background">
+    <img id="bossImage" src="timaficence.jpg" style="display:none;" alt="boss">
+    <img id="victoryImgSource" src="victory.jpg" style="display:none;" alt="victory">
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const healthEl = document.getElementById('health');
+    const staminaEl = document.getElementById('stamina');
+    const bossHealthEl = document.getElementById('bossHealth');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const victoryScreen = document.getElementById('victoryScreen');
+    const finalScoreEl = document.getElementById('finalScore');
+    const heroImg = document.getElementById('heroImage');
+    const backgroundImg = document.getElementById('backgroundImage');
+    const bossImg = document.getElementById('bossImage');
+    const victoryImgEl = document.getElementById('victoryImage');
+
+    // Настройки игры
+    let gameSpeed = 6;
+    let score = 0;
+    let isGameOver = false;
+    let isGameWon = false;
+    let frame = 0;
+    let width, height;
+    let bgX = 0;
+
+    const BOSS_SCORE_THRESHOLD = 100;
+
+    // Настройка Canvas
+    function resize() {
+        width = window.innerWidth > 800 ? 800 : window.innerWidth - 20;
+        height = 400;
+        canvas.width = width;
+        canvas.height = height;
+        document.getElementById('gameContainer').style.width = `${width}px`;
+        document.getElementById('gameContainer').style.height = `${height}px`;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // --- Объекты Игры ---
+
+    // Игрок (Yska69)
+    const player = {
+        x: 50, y: 0, w: 50, h: 50, dy: 0, jumpForce: 12, gravity: 0.6,
+        grounded: false, jumpCount: 0, maxJumps: 2,
+        health: 3, maxHealth: 3,
+        stamina: 100, maxStamina: 100,
+        staminaCost: 40, staminaRechargeRate: 0.5, // Уменьшена скорость восстановления
+        canShoot: false,
+        hitCooldown: 0, maxHitCooldown: 60,
+
+        draw: function() {
+            ctx.globalAlpha = this.hitCooldown > 0 ? 0.5 : 1; // Мигание при получении урона
+            if (heroImg.complete && heroImg.naturalHeight !== 0) {
+                ctx.drawImage(heroImg, this.x, this.y, this.w, this.h);
+            } else {
+                ctx.fillStyle = '#a200ff'; ctx.fillRect(this.x, this.y, this.w, this.h);
+                ctx.fillStyle = '#fff'; ctx.font = '10px Roboto Mono'; ctx.fillText("YSKA", this.x + 10, this.y + 28);
+            }
+            ctx.globalAlpha = 1;
+        },
+
+        update: function() {
+            // Физика прыжка
+            if (!this.grounded) {
+                this.dy += this.gravity;
+                this.y += this.dy;
+            }
+
+            // Приземление
+            if (this.y + this.h >= height - 20) {
+                this.y = height - 20 - this.h;
+                this.dy = 0;
+                this.grounded = true;
+                this.jumpCount = 0;
+            } else {
+                this.grounded = false;
+            }
+
+            // Восстановление выносливости (только если на земле или медленнее в воздухе)
+            if (this.stamina < this.maxStamina) {
+                if (this.grounded) {
+                    this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRechargeRate * 2); // Быстрее на земле
+                } else {
+                    this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRechargeRate * 0.5); // Медленнее в воздухе
+                }
+            }
+
+            // Кульдаун урона
+            if (this.hitCooldown > 0) this.hitCooldown--;
+
+            this.draw();
+            this.updateUI();
+        },
+
+        jump: function() {
+            const isDoubleJump = this.jumpCount === 1;
+            
+            if (this.grounded || (isDoubleJump && this.stamina >= this.staminaCost)) {
+                this.dy = -this.jumpForce;
+                this.grounded = false;
+                this.jumpCount++;
+                createParticles(this.x + this.w/2, this.y + this.h, 5);
+
+                if (isDoubleJump) {
+                    this.stamina = Math.max(0, this.stamina - this.staminaCost); // Расход выносливости
+                }
+            }
+        },
+
+        takeDamage: function() {
+            if (this.hitCooldown > 0) return;
+            this.health--;
+            this.hitCooldown = this.maxHitCooldown;
+            createParticles(this.x + this.w/2, this.y + this.h/2, 20, '#ff4444');
+            if (this.health <= 0) gameOver();
+        },
+
+        updateUI: function() {
+            let hearts = '';
+            for (let i = 0; i < this.maxHealth; i++) {
+                hearts += i < this.health ? '❤️' : '🤍';
+            }
+            healthEl.innerHTML = `HP: ${hearts}`;
+
+            let staminaIcon = '';
+            if (this.stamina > 80) staminaIcon = '⚡';
+            else if (this.stamina > 40) staminaIcon = '🔋';
+            else staminaIcon = '🚨';
+            staminaEl.innerHTML = `${staminaIcon} ${Math.floor(this.stamina)}%`;
+
+            this.canShoot = score >= BOSS_SCORE_THRESHOLD;
+        }
+    };
+
+    // Оружие и пули
+    const bullets = [];
+    let bulletCooldown = 0;
+
+    class Bullet {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.w = 10;
+            this.h = 4;
+            this.speed = 15;
+        }
+
+        draw() {
+            ctx.fillStyle = '#00ff9d';
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+        }
+
+        update() {
+            this.x += this.speed;
+            this.draw();
+        }
+    }
+
+    function shoot() {
+        if (!player.canShoot || bulletCooldown > 0) return;
+        bullets.push(new Bullet(player.x + player.w, player.y + player.h / 2));
+        bulletCooldown = 15; // Кулдаун 15 кадров
+    }
+
+    // --- Препятствия (Obstacles) и Щиты (Shields) ---
+
+    const obstacles = [];
+    const obstacleDefs = [
+        { type: '🐛', size: 40, yOffset: 0, isFlying: false, speedFactor: 1 }, 
+        { type: '📱', size: 50, yOffset: 0, isFlying: false, speedFactor: 1 }, 
+        { type: '📉', size: 45, yOffset: 0, isFlying: false, speedFactor: 1 }, 
+        { type: '☁️', size: 60, yOffset: 80, isFlying: true, speedFactor: 0.8 },
+        { type: '🛰️', size: 55, yOffset: 120, isFlying: true, speedFactor: 1.2 },
+        { type: '💥', size: 70, yOffset: 0, isFlying: false, speedFactor: 1.1 },
+    ];
+
+    class Obstacle {
+        constructor() {
+            const def = obstacleDefs[Math.floor(Math.random() * obstacleDefs.length)];
+            this.w = def.size; this.h = def.size;
+            this.x = width;
+            this.y = height - 20 - def.yOffset - this.h;
+            this.type = def.type;
+            this.isFlying = def.isFlying;
+            this.speedFactor = def.speedFactor;
+            if (this.isFlying) {
+                this.y = Math.random() * (height / 2 - this.h) + (height / 4);
+            }
+        }
+        draw() { ctx.font = `${this.w}px Arial`; ctx.fillText(this.type, this.x, this.y + this.h - 5); }
+        update() { this.x -= gameSpeed * this.speedFactor; this.draw(); }
+    }
+
+    const shields = [];
+    const shieldPositions = [20, 60]; // Появится на 20 и 60 очках
+
+    class Shield {
+        constructor() {
+            this.w = 30; this.h = 30;
+            this.x = width;
+            this.y = height - 20 - this.h * 1.5;
+            this.collected = false;
+        }
+
+        draw() {
+            if (this.collected) return;
+            ctx.fillStyle = 'rgba(68, 170, 255, 0.7)';
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+            ctx.fillStyle = '#fff';
+            ctx.font = '24px Arial';
+            ctx.fillText('🛡️', this.x + 2, this.y + 25);
+        }
+
+        update() {
+            if (this.collected) return;
+            this.x -= gameSpeed;
+            this.draw();
+        }
+    }
+    
+    // --- Босс Timaficence ---
+
+    const boss = {
+        x: width - 100, y: height - 20 - 100, w: 100, h: 100,
+        health: 10, maxHealth: 10,
+        attackCooldown: 120, attackTimer: 120,
+        jumpTimer: 0, isJumping: false, dy: 0, gravity: 0.5,
+        attackType: 0, // 0: Выстрел, 1: Прыжок, 2: Удар
+        
+        draw: function() {
+            if (bossImg.complete && bossImg.naturalHeight !== 0) {
+                ctx.drawImage(bossImg, this.x, this.y, this.w, this.h);
+            } else {
+                ctx.fillStyle = '#ff0000'; ctx.fillRect(this.x, this.y, this.w, this.h);
+                ctx.fillStyle = '#fff'; ctx.font = '12px Roboto Mono'; ctx.fillText("BOSS", this.x + 30, this.y + 55);
+            }
+        },
+
+        update: function() {
+            if (this.health <= 0) return;
+
+            // Движение (босс стоит, пока игрок его не увидит)
+            if (this.x > width - 150) this.x -= 1; 
+
+            // Физика прыжка
+            if (this.isJumping) {
+                this.dy += this.gravity;
+                this.y += this.dy;
+                if (this.y + this.h >= height - 20) {
+                    this.y = height - 20 - this.h;
+                    this.dy = 0;
+                    this.isJumping = false;
+                }
+            }
+
+            // Атака
+            this.attackTimer--;
+            if (this.attackTimer <= 0) {
+                this.attack();
+                this.attackTimer = 120 + Math.random() * 60; // Рандомный кулдаун
+            }
+
+            this.draw();
+            this.updateUI();
+        },
+
+        attack: function() {
+            this.attackType = Math.floor(Math.random() * 3);
+
+            if (this.attackType === 0) { // Выстрел (снаряд)
+                bossBullets.push(new BossBullet(this.x, this.y + this.h / 2));
+            } else if (this.attackType === 1) { // Прыжок (уворачивание)
+                this.dy = -10;
+                this.isJumping = true;
+            } else if (this.attackType === 2) { // Резкий удар (требуется прыжок)
+                // Визуальный индикатор
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+                ctx.fillRect(0, height - 20 - player.h - 10, width, 10);
+                // Босс слегка "заряжается"
+                setTimeout(() => {
+                     // Атака по земле
+                     if (player.grounded) player.takeDamage();
+                     createParticles(player.x + player.w/2, height - 20, 30, '#ff0000');
+                }, 200); 
+            }
+        },
+        
+        takeDamage: function() {
+            this.health--;
+            createParticles(this.x + this.w/2, this.y + this.h/2, 15, '#ffcc00');
+            if (this.health <= 0) gameWin();
+        },
+
+        updateUI: function() {
+             let shields = '';
+             for (let i = 0; i < this.maxHealth; i++) {
+                 shields += i < this.health ? '🛡️' : '💔';
+             }
+             bossHealthEl.style.display = 'flex';
+             bossHealthEl.innerHTML = `TIMAFICENCE: ${shields}`;
+        }
+    };
+
+    // Снаряды босса
+    const bossBullets = [];
+    class BossBullet {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.w = 15; h = 8;
+            this.speed = -8;
+        }
+        draw() { ctx.fillStyle = '#ff0000'; ctx.fillRect(this.x, this.y, this.w, this.h); }
+        update() { this.x += this.speed; this.draw(); }
+    }
+
+    // --- Общая Логика ---
+
+    // Частицы (спецэффекты)
+    let particles = [];
+    function createParticles(x, y, amount, color='#00ff9d') {
+        for(let i=0; i<amount; i++) {
+            particles.push({
+                x: x, y: y,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                life: 20, color: color
+            });
+        }
+    }
+
+    // Управление
+    let lastTap = 0;
+    function handleInput(e) {
+        if (isGameOver || isGameWon) {
+            resetGame();
+            return;
+        }
+
+        if (e.type === 'keydown') {
+            if (e.code === 'Space' || e.code === 'ArrowUp') player.jump();
+            if (e.code === 'KeyC') shoot(); // Изменено на KeyC для стрельбы
+        } else if (e.type === 'touchstart' || e.type === 'mousedown') {
+            e.preventDefault();
+            const now = new Date().getTime();
+            const timesince = now - lastTap;
+            
+            // Определяем, был ли клик для стрельбы или для прыжка
+            const isShootClick = (e.type === 'mousedown' && e.button === 0) || (e.type === 'touchstart' && e.touches[0].clientX > width / 2);
+
+            if (player.canShoot && isShootClick) {
+                shoot();
+            } else {
+                // Иначе - прыгаем/двойной прыжок
+                if (timesince < 300 && timesince > 0 && player.jumpCount < player.maxJumps) { 
+                    player.jump(); 
+                    lastTap = 0; 
+                } else if (player.grounded || player.jumpCount < player.maxJumps -1) { 
+                     player.jump();
+                     lastTap = now;
+                } else {
+                    lastTap = now;
+                }
+            }
+        }
+    }
+
+    document.addEventListener('keydown', handleInput);
+    canvas.addEventListener('touchstart', handleInput, {passive: false});
+    canvas.addEventListener('mousedown', handleInput); 
+
+    // Игровой цикл
+    function gameLoop() {
+        if (isGameOver || isGameWon) return;
+
+        requestAnimationFrame(gameLoop);
+        
+        // Отрисовка фона
+        ctx.clearRect(0, 0, width, height);
+        if (backgroundImg.complete && backgroundImg.naturalHeight !== 0) {
+            ctx.drawImage(backgroundImg, bgX, 0, width, height);
+            ctx.drawImage(backgroundImg, bgX + width, 0, width, height);
+            // Добавляем темный полупрозрачный слой
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Изменено: 0.4 для более темного фона
+            ctx.fillRect(0, 0, width, height);
+
+            bgX -= gameSpeed * 0.3 * (score < BOSS_SCORE_THRESHOLD ? 1 : 0);
+            if (bgX <= -width) { bgX = 0; }
+        } else {
+            ctx.fillStyle = 'linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%)';
+            ctx.fillRect(0,0, width, height);
+        }
+
+
+        // Линия пола
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(0, height - 20); ctx.lineTo(width, height - 20); ctx.stroke();
+
+        player.update();
+        bulletCooldown = Math.max(0, bulletCooldown - 1);
+
+        if (score < BOSS_SCORE_THRESHOLD) {
+            // Режим "Бег"
+            frame++;
+            if (frame % 80 === 0) { obstacles.push(new Obstacle()); }
+            if (gameSpeed < 18 && frame % 400 === 0) gameSpeed += 0.3;
+            
+            // Спавн щитов
+            if (shieldPositions.includes(score) && !shields.some(s => s.x > 0)) {
+                shields.push(new Shield());
+            }
+
+            // Обновление препятствий
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].update();
+                if (obstacles[i].x + obstacles[i].w < 0) {
+                    obstacles.splice(i, 1);
+                    score++;
+                    scoreEl.innerText = 'SCORE: ' + score;
+                }
+                // Коллизия с препятствиями
+                if (
+                    player.x < obstacles[i].x + obstacles[i].w && player.x + player.w > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].h && player.y + player.h > obstacles[i].y
+                ) {
+                    player.takeDamage();
+                }
+            }
+
+            // Обновление щитов
+            for (let i = shields.length - 1; i >= 0; i--) {
+                shields[i].update();
+                // Сбор щита
+                if (
+                    !shields[i].collected && 
+                    player.x < shields[i].x + shields[i].w && player.x + player.w > shields[i].x &&
+                    player.y < shields[i].y + shields[i].h && player.y + player.h > shields[i].y
+                ) {
+                    player.maxHealth++; // +1 HP
+                    player.health++; // Восстановление +1
+                    shields.splice(i, 1);
+                    createParticles(player.x + player.w/2, player.y + player.h/2, 20, 'blue');
+                }
+            }
+        } else {
+            // Режим "Босс-файт"
+            obstacles.length = 0; // Удаляем обычные препятствия
+            gameSpeed = 0; // Останавливаем бег
+
+            boss.update();
+
+            // Обновление пуль игрока
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].update();
+                if (bullets[i].x > width) { bullets.splice(i, 1); continue; }
+
+                // Коллизия пули с боссом
+                if (
+                    bullets[i].x < boss.x + boss.w && bullets[i].x + bullets[i].w > boss.x &&
+                    bullets[i].y < boss.y + boss.h && bullets[i].y + bullets[i].h > boss.y
+                ) {
+                    boss.takeDamage();
+                    bullets.splice(i, 1);
+                }
+            }
+            
+            // Обновление пуль босса
+            for (let i = bossBullets.length - 1; i >= 0; i--) {
+                bossBullets[i].update();
+                if (bossBullets[i].x < 0) { bossBullets.splice(i, 1); continue; }
+
+                // Коллизия пули босса с игроком
+                if (
+                    player.x < bossBullets[i].x + bossBullets[i].w && player.x + player.w > bossBullets[i].x &&
+                    player.y < bossBullets[i].y + bossBullets[i].h && player.y + player.h > bossBullets[i].y
+                ) {
+                    player.takeDamage();
+                    bossBullets.splice(i, 1);
+                }
+            }
+
+             // Коллизия с самим боссом
+            if (
+                player.x < boss.x + boss.w && player.x + player.w > boss.x &&
+                player.y < boss.y + boss.h && player.y + player.h > boss.y
+            ) {
+                player.takeDamage();
+            }
+        }
+
+        // Обновление частиц
+        for(let i = particles.length -1; i >=0; i--) {
+            let p = particles[i];
+            p.x += p.vx; p.y += p.vy; p.life--;
+            ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 3, 3);
+            if(p.life <= 0) particles.splice(i, 1);
+        }
+    }
+
+    // --- Конечные Экраны ---
+
+    function gameOver() {
+        isGameOver = true;
+        gameOverScreen.style.display = 'block';
+        finalScoreEl.innerText = 'Итоговый счет: ' + score;
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    function gameWin() {
+        isGameWon = true;
+        victoryScreen.style.display = 'block';
+        if (victoryImgEl.src === 'victory.jpg' && victoryImgSource.naturalHeight === 0) {
+            victoryImgEl.style.display = 'none'; // Если картинки нет, убираем ее
+        }
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    function resetGame() {
+        // Сброс всех переменных
+        isGameOver = false;
+        isGameWon = false;
+        score = 0;
+        gameSpeed = 6;
+        frame = 0;
+        bgX = 0;
+        obstacles.length = 0;
+        shields.length = 0;
+        particles.length = 0;
+        bullets.length = 0;
+        bossBullets.length = 0;
+        
+        player.health = 3;
+        player.maxHealth = 3;
+        player.stamina = 100;
+        player.y = 0;
+        
+        boss.health = 10;
+        boss.x = width - 100;
+
+        scoreEl.innerText = 'SCORE: 0';
+        bossHealthEl.style.display = 'none';
+        gameOverScreen.style.display = 'none';
+        victoryScreen.style.display = 'none';
+        
+        player.updateUI(); // Обновление интерфейса здоровья/статуса
+        gameLoop();
+    }
+
+    // Старт
+    player.updateUI();
+    gameLoop();
+
+</script>
+</body>
+</html>
