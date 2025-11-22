@@ -161,10 +161,11 @@
             <div id="bossHealth" class="ui-item" style="display:none;">TIMAFICENCE: 🛡️🛡️🛡️</div>
         </div>
 
-        <div class="control-hint">📱 ЛЕВО: Прыжок | ЦЕНТР: Рывок | ПРАВО: Стрельба</div>
+        <div class="control-hint">📱 ТАП СЛЕВА: Прыжок | ТАП СПРАВА: Стрельба (после 100 очков)</div>
 
         <div id="menuScreen">
-            <h1 style="margin: 0; color: #00ff9d;">Yska69 Run: Timaficence Merge</h1>
+            <h1 style="margin: 0; color: #00ff9d;">YSKA69 RUN:</h1>
+            <h2 style="margin: 5px 0 15px 0; color: #ffcc00;">TIMAFICENCE MERGE</h2>
             <p>Выберите сложность:</p>
             <button class="difficulty-btn easy" onclick="startGame('easy')">🐢 ЛЁГКИЙ<br><small>Скорость x0.8, Больше HP</small></button>
             <button class="difficulty-btn medium" onclick="startGame('medium')">⚡ СРЕДНИЙ<br><small>Стандартная игра</small></button>
@@ -191,8 +192,8 @@
     </div>
 
     <div class="subtitle">
-        💡 ПК: ПРОБЕЛ - прыжок, SHIFT - рывок, C - выстрел<br>
-        📱 МОБИЛА: Тап слева - прыжок, центр - рывок, справа - выстрел
+        💡 ПК: ПРОБЕЛ - прыжок, C - выстрел (после 100 очков)<br>
+        📱 МОБИЛА: Тап слева - прыжок, тап справа - выстрел (после 100 очков)
     </div>
 
     <img id="heroImage" src="yska69.jpg" style="display:none;" alt="hero">
@@ -259,11 +260,10 @@
         grounded: false, jumpCount: 0, maxJumps: 2,
         health: 3, maxHealth: 3,
         stamina: 100, maxStamina: 100,
-        staminaCost: 40, dashCost: 30,
+        staminaCost: 40,
         staminaRechargeRate: 0.6,
         canShoot: false,
         hitCooldown: 0, maxHitCooldown: 60,
-        isDashing: false, dashTimer: 0, dashDuration: 15, dashSpeed: 20,
         trail: [],
 
         draw: function() {
@@ -273,7 +273,7 @@
                 const t = this.trail[i];
                 const alpha = (i / this.trail.length) * 0.3;
                 ctx.globalAlpha = alpha;
-                ctx.fillStyle = this.isDashing ? '#00ff9d' : '#a200ff';
+                ctx.fillStyle = '#FFD700'; // Золотистый цвет
                 ctx.fillRect(t.x, t.y, this.w, this.h);
             }
             ctx.globalAlpha = 1;
@@ -283,23 +283,16 @@
                 ctx.globalAlpha = 0.5;
             }
 
-            // Свечение при рывке
-            if (this.isDashing) {
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = '#00ff9d';
-            }
-
             if (heroImg.complete && heroImg.naturalHeight !== 0) {
                 ctx.drawImage(heroImg, this.x, this.y, this.w, this.h);
             } else {
-                ctx.fillStyle = this.isDashing ? '#00ff9d' : '#a200ff';
+                ctx.fillStyle = '#FFD700'; // Золотистый цвет
                 ctx.fillRect(this.x, this.y, this.w, this.h);
-                ctx.fillStyle = '#fff';
+                ctx.fillStyle = '#000';
                 ctx.font = '10px Roboto Mono';
                 ctx.fillText("YSKA", this.x + 10, this.y + 28);
             }
             
-            ctx.shadowBlur = 0;
             ctx.globalAlpha = 1;
         },
 
@@ -307,16 +300,6 @@
             // Trail
             this.trail.push({x: this.x, y: this.y});
             if (this.trail.length > 8) this.trail.shift();
-
-            // Рывок
-            if (this.isDashing) {
-                this.dashTimer--;
-                this.x += this.dashSpeed;
-                if (this.dashTimer <= 0) {
-                    this.isDashing = false;
-                    this.x = 50; // Возврат на позицию
-                }
-            }
 
             // Физика прыжка
             if (!this.grounded) {
@@ -335,7 +318,7 @@
             }
 
             // Восстановление выносливости
-            if (this.stamina < this.maxStamina && !this.isDashing) {
+            if (this.stamina < this.maxStamina) {
                 const rechargeMultiplier = this.grounded ? 2 : 0.5;
                 this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRechargeRate * rechargeMultiplier);
             }
@@ -354,7 +337,7 @@
                 this.dy = -this.jumpForce;
                 this.grounded = false;
                 this.jumpCount++;
-                createParticles(this.x + this.w/2, this.y + this.h, 5, '#00ff9d');
+                createParticles(this.x + this.w/2, this.y + this.h, 5, '#FFD700');
 
                 if (isDoubleJump) {
                     this.stamina = Math.max(0, this.stamina - this.staminaCost);
@@ -362,17 +345,8 @@
             }
         },
 
-        dash: function() {
-            if (this.isDashing || !this.grounded || this.stamina < this.dashCost) return;
-            
-            this.isDashing = true;
-            this.dashTimer = this.dashDuration;
-            this.stamina = Math.max(0, this.stamina - this.dashCost);
-            createParticles(this.x, this.y + this.h/2, 20, '#00ff9d');
-        },
-
         takeDamage: function() {
-            if (this.hitCooldown > 0 || this.isDashing) return;
+            if (this.hitCooldown > 0) return;
             
             this.health--;
             this.hitCooldown = this.maxHitCooldown;
@@ -687,10 +661,6 @@
                 e.preventDefault();
                 player.jump();
             }
-            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-                e.preventDefault();
-                player.dash();
-            }
             if (e.code === 'KeyC') {
                 e.preventDefault();
                 shoot();
@@ -705,15 +675,11 @@
                 touchX = e.clientX - canvas.getBoundingClientRect().left;
             }
 
-            const leftZone = width / 3;
-            const rightZone = width * 2 / 3;
+            const halfWidth = width / 2;
 
-            if (touchX < leftZone) {
+            if (touchX < halfWidth) {
                 // Левая зона - прыжок
                 player.jump();
-            } else if (touchX >= leftZone && touchX < rightZone) {
-                // Центральная зона - рывок
-                player.dash();
             } else {
                 // Правая зона - стрельба
                 shoot();
@@ -786,9 +752,8 @@
                     continue;
                 }
                 
-                // Коллизия с препятствиями (не работает при рывке)
+                // Коллизия с препятствиями
                 if (
-                    !player.isDashing &&
                     player.x < obstacles[i].x + obstacles[i].w && 
                     player.x + player.w > obstacles[i].x &&
                     player.y < obstacles[i].y + obstacles[i].h && 
@@ -852,7 +817,6 @@
 
                 // Коллизия пули босса с игроком
                 if (
-                    !player.isDashing &&
                     player.x < bossBullets[i].x + bossBullets[i].w && 
                     player.x + player.w > bossBullets[i].x &&
                     player.y < bossBullets[i].y + bossBullets[i].h && 
@@ -865,7 +829,6 @@
 
             // Коллизия с самим боссом
             if (
-                !player.isDashing &&
                 player.x < boss.x + boss.w && 
                 player.x + player.w > boss.x &&
                 player.y < boss.y + boss.h && 
@@ -970,7 +933,6 @@
         player.y = 0;
         player.dy = 0;
         player.stamina = 100;
-        player.isDashing = false;
         player.trail = [];
         player.hitCooldown = 0;
         
